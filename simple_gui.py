@@ -85,6 +85,10 @@ with gr.Blocks(theme=gr.themes.Monochrome()) as demo:
     chatbot.clear(clear_agent_memory)
 
 if __name__ == "__main__":
+    import os
+    pid = os.getpid()
+    with open(".process", "w") as f:
+        f.write(f"{pid}")
     demo.launch(
         server_name="0.0.0.0", 
         server_port=7860

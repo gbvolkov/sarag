@@ -9,6 +9,7 @@ gv.env
 .env
 .gradio
 .langgraph_api
+.process
 auth.json
 auth_tickets.json
 auth_glossary.json

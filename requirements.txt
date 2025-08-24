@@ -18,3 +18,5 @@ sentencepiece
 accelerate
 pandas
 gradio
+
+openpyxl

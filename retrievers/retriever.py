@@ -164,13 +164,37 @@ def get_retriever_faiss():
 
 def get_retriever_object_faiss_chunked():
     MAX_RETRIEVALS = 3
-    vector_store_path = config.ASSISTANT_INDEX_FOLDER
-    vectorstore = load_vectorstore(vector_store_path, config.EMBEDDING_MODEL)
+    k = 5
+    bft_store_path = config.ASSISTANT_INDEX_FOLDER
+    itil_store_path = config.ITIL_INDEX_FOLDER
+    bft_vs = load_vectorstore(bft_store_path, config.EMBEDDING_MODEL)
     
+    itil_vs = load_vectorstore(itil_store_path, config.EMBEDDING_MODEL)
+    
+    with open(f'{itil_store_path}/docstore.pkl', 'rb') as file:
+        documents = pickle.load(file)
+    doc_ids = [doc.metadata.get('relative_path', '') for doc in documents]
+    store = InMemoryByteStore()
+    id_key = "relative_path"
+    itil_retriever = MultiVectorRetriever(
+        vectorstore=itil_vs,
+        byte_store=store,
+        id_key=id_key,
+        search_kwargs={"k": 2},
+    )
+    itil_retriever.docstore.mset(list(zip(doc_ids, documents)))
+
+    #itil_retriever = itil_vs.as_retriever(search_kwargs={"k": k})
     # Load docstore once and pre-index "head" docs by source
-    with open(os.path.join(vector_store_path, "docstore.pkl"), "rb") as f:
+    with open(os.path.join(bft_store_path, "docstore.pkl"), "rb") as f:
         docstore = pickle.load(f)
     head_store = _build_heads_by_source(docstore)
+
+    ensemble_retiriever = EnsembleRetriever(
+        retrievers=[bft_vs.as_retriever(search_kwargs={"k": k}),
+                    itil_retriever],
+        weights=[0.6, 0.4]  # adjust to favor text vs. images
+    )
 
     #device = "cuda" if torch.cuda.is_available() else "cpu"
     device = "cpu"
@@ -180,7 +204,7 @@ def get_retriever_object_faiss_chunked():
     )
     reranker = CrossEncoderRerankerWithScores(model=reranker_model, top_n=MAX_RETRIEVALS, min_ratio=float(config.MIN_RERANKER_RATIO))
     retriever = ContextualCompressionRetriever(
-        base_compressor=reranker, base_retriever=vectorstore.as_retriever()
+        base_compressor=reranker, base_retriever=ensemble_retiriever
     )
     return retriever, head_store
 

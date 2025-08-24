@@ -23,12 +23,12 @@ def _build_heads_by_source(docstore) -> Dict[str, List[Document]]:
 def _dedupe_docs(docs: List[Document]) -> List[Document]:
     seen = set()
     out = []
-    head_docs=[d for d in docs if d.metadata["type"] == "head"]
-    other_docs=[d for d in docs if d.metadata["type"] != "head"]
+    head_docs=[d for d in docs if d.metadata.get("type", "head") == "head"]
+    other_docs=[d for d in docs if d.metadata.get("type", "head") != "head"]
     for d in head_docs:
         m = d.metadata or {}
         # prefer a stable id if you have one
-        key = m.get("id") or m.get("doc_id") or (m.get("source"), m.get("type"), d.page_content)
+        key = m.get("id") or m.get("doc_id") or (m.get("source"), m.get("type", "head"), d.page_content)
         if key not in seen:
             seen.add(key)
             out.append(d)

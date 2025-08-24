@@ -1,6 +1,7 @@
 __pycache__
 .venv
 data
+index
 keys
 logs
 models

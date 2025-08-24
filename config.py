@@ -65,9 +65,10 @@ def reload_admin_config():
     else:
         CHECK_RIGHTS='False'
 
-NOTION_INDEX_FOLDER = os.environ.get('NOTION_INDEX_FOLDER') or "./data/notion_idx"
-CHATS_INDEX_FOLDER = os.environ.get('CHATS_INDEX_FOLDER') or "./data/chats_idx"
-ASSISTANT_INDEX_FOLDER = os.environ.get('ASSISTANT_INDEX_FOLDER') or "./data/bfts_index"
+NOTION_INDEX_FOLDER = os.environ.get('NOTION_INDEX_FOLDER') or "./data/index/notion_idx"
+CHATS_INDEX_FOLDER = os.environ.get('CHATS_INDEX_FOLDER') or "./data/index/chats_idx"
+ASSISTANT_INDEX_FOLDER = os.environ.get('ASSISTANT_INDEX_FOLDER') or "./data/index/bfts_index"
+ITIL_INDEX_FOLDER = os.environ.get('ITIL_INDEX_FOLDER') or "./data/index/itil_index"
 RERANKING_MODEL = os.environ.get('RERANKING_MODEL') or '/models/bge-reranker-large'
 NO_CUDA = os.environ.get('NO_CUDA', "False")
 

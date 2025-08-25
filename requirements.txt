@@ -12,6 +12,8 @@ langgraph
 faiss-cpu
 torch
 transformers
+assemblyai
+
 
 sentence-transformers
 sentencepiece

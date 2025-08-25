@@ -80,7 +80,7 @@ def detect_headers_and_columns(ws):
         nonnull = [x for x in vals if x is not None]
         if not nonnull: 
             continue
-        txt = sum(1 for x in nonnull if isinstance(x, str))
+        txt = sum(isinstance(x, str) for x in nonnull)
         candidates.append((hr, txt))
     candidates.sort(key=lambda x: x[1], reverse=True)
     header_row = candidates[0][0] if candidates else 7
@@ -98,13 +98,10 @@ def detect_headers_and_columns(ws):
         if s and isinstance(s, str) and s.strip() and (not (isinstance(p, str) and s.strip().lower() == p.strip().lower())):
             joint = f"{carry} — {s.strip()}"
         else:
-            joint = carry if (isinstance(p, str) and p.strip()) else (carry if carry else (p if p is not None else None))
-        # Has any data?
-        has_data = False
-        for r in range(data_start, max_row+1):
-            if cell(ws, r, c) is not None:
-                has_data = True
-                break
+            joint = carry if (isinstance(p, str) and p.strip()) else (carry or (p if p is not None else None))
+        has_data = any(
+            cell(ws, r, c) is not None for r in range(data_start, max_row + 1)
+        )
         if joint and has_data:
             selected.append((c, joint))
     return header_row, subheader_row, data_start, selected
@@ -186,8 +183,7 @@ def main():
         s2 = s.dropna()
         if len(s2)==0: return "TEXT"
         if pd.api.types.is_integer_dtype(s2): return "INTEGER"
-        if pd.api.types.is_float_dtype(s2): return "REAL"
-        return "TEXT"
+        return "REAL" if pd.api.types.is_float_dtype(s2) else "TEXT"
 
     con = sqlite3.connect(DB_PATH)
     cur = con.cursor()
@@ -196,7 +192,8 @@ def main():
     cur.execute(f'CREATE TABLE "{TABLE_NAME}" ({col_defs})')
     placeholders = ", ".join(["?"]*len(EN_COLUMNS_ORDER))
     cur.executemany(f'INSERT INTO "{TABLE_NAME}" VALUES ({placeholders})', df.where(pd.notnull(df), None).values.tolist())
-    con.commit(); con.close()
+    con.commit()
+    con.close()
 
     print(f"Created {DB_PATH} with table {TABLE_NAME}: {df.shape[0]} rows, {df.shape[1]} columns.")
     # Sanity check for bitrix_task_id

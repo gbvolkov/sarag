@@ -16,15 +16,18 @@ from langchain_huggingface import HuggingFacePipeline, ChatHuggingFace
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.prebuilt.chat_agent_executor import create_react_agent
 
-
 from langchain_gigachat import GigaChat
 
 from retrievers.retriever import get_search_tool
 
+from tasks_info_tool import tasks_info
+
 
 search_kb = get_search_tool()
+
 search_tools = [
     search_kb,
+    tasks_info,
 ]
 
 with open("prompt.txt", "r", encoding="utf-8") as f:

@@ -15,6 +15,35 @@ llm_answer_gen = ChatOpenAI(model="gpt-4.1-mini", temperature=0)
 db_tasks = SQLDatabase.from_uri("sqlite:///data/tasks.db")
 db_tasks.name = "tasks"
 
+columns_meanings = """
+    "Номер задачи в Битрикс": "bitrix_task_id",
+    "Номер ЗНИ": "request_id",
+    "Текущий приоритет обращения": "current_ticket_priority",
+    "Группа приоритетов": "priority_group",
+    "Наименование": "title",
+    "Проект Битрикс": "bitrix_project",
+    "Инициатор": "initiator",
+    "Куратор": "curator",
+    "Текущий исполнитель": "current_assignee",
+    "ЗНИ текущий этап": "request_current_stage",
+    "Статус ЗНИ": "request_status",
+    "Дата заведения в системе": "created_date",
+    "Плановая дата окончания бизнес-анализа": "planned_business_analysis_end_date",
+    "Плановая дата окончания анализа": "planned_analysis_end_date",
+    "Плановая дата выполнения": "planned_completion_date",
+    "Дата завершения": "completed_date",
+    "Код завершения ЗНИ": "request_completion_code",
+    "SLA — Дата начала SLA": "sla_start_date",
+    "SLA — SLA (кал. дней)": "sla_calendar_days",
+    "SLA — Норматив SLA (кал. дней)": "sla_calendar_days_target",
+    "SLA — SLA (раб. дней)": "sla_work_days",
+    "SLA — Норматив SLA (раб. дней)": "sla_work_days_target",
+    "Дата оценки": "estimate_date",
+    "Общая оценка, час": "estimate_total_hours",
+    "Уточненная оценка, час": "estimate_refined_hours",
+    "Факт, час": "actual_hours",
+"""
+
 system_message = """
 Given an input question, create a syntactically correct {dialect} query to
 run to help find the answer. You can order the results by a relevant column to
@@ -28,6 +57,9 @@ pay attention to which column is in which table.
 
 Only use the following tables:
 {table_info}
+
+Columns meanings:
+{columns_meanings}
 """
 
 user_prompt = "Question: {input}"
@@ -48,6 +80,7 @@ def write_query(question: str):
         {
             "dialect": db_tasks.dialect,
             "table_info": db_tasks.get_table_info(),
+            "columns_meanings": columns_meanings,
             "input": question
         }
     )

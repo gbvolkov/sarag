@@ -1,2 +1,2 @@
 rm nohup.out
-nohup python simple_gui.py &
+nohup python sarag_gui.py &

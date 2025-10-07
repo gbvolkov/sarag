@@ -18,15 +18,17 @@ from langgraph.prebuilt.chat_agent_executor import create_react_agent
 
 from langchain_gigachat import GigaChat
 
-from retrievers.retriever import get_search_tool
+from retrievers.retriever import get_search_tool, get_retrieve_requirements_tool
 
 from tasks_info_tool import tasks_info
 
 
 search_kb = get_search_tool()
+retrieve_task_requirements = get_retrieve_requirements_tool()
 
 search_tools = [
     search_kb,
+    retrieve_task_requirements,
     tasks_info,
 ]
 
@@ -44,7 +46,8 @@ llm = GigaChat(
 """
 from langchain_openai import ChatOpenAI
 
-llm = ChatOpenAI(model="gpt-4.1-mini", temperature=0)
+llm_raw = ChatOpenAI(model="gpt-4.1-mini", temperature=0)
+llm = llm_raw.bind_tools(tools=search_tools, parallel_tool_calls = False)
 
 memory = MemorySaver()
 agent =  create_react_agent(

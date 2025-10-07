@@ -71,96 +71,6 @@ def load_vectorstore(file_path: str, embedding_model_name: str) -> FAISS:
     embeddings = HuggingFaceEmbeddings(model_name=embedding_model_name, model_kwargs={"device": device})
     return FAISS.load_local(file_path, embeddings, allow_dangerous_deserialization=True)
 
-def get_retriever_multi():
-    #device = "cuda" if torch.cuda.is_available() else "cpu"
-    device = "cpu"
-    notion_vs = load_vectorstore(config.NOTION_INDEX_FOLDER, config.EMBEDDING_MODEL)
-    chats_vs = load_vectorstore(config.CHATS_INDEX_FOLDER, config.EMBEDDING_MODEL)
-    k = 5
-    ensemble = EnsembleRetriever(
-        retrievers=[notion_vs.as_retriever(search_kwargs={"k": k}),
-                    chats_vs.as_retriever(search_kwargs={"k": k})],
-        weights=[0.5, 0.5]  # adjust to favor text vs. images
-    )
-    reranker_model = HuggingFaceCrossEncoder(model_name=config.RERANKING_MODEL, model_kwargs={"device": device})
-    reranker = CrossEncoderRerankerWithScores(model=reranker_model, top_n=3, min_ratio=float(config.MIN_RERANKER_RATIO))
-    retriever = ContextualCompressionRetriever(
-        base_compressor=reranker, base_retriever=ensemble
-    )
-    def search(query: str) -> List[Document]:
-        result = retriever.invoke(query, search_kwargs={"k": k})
-        # docs = retriever.similarity_search_with_score(query, k=5)
-        # result = [doc for doc, score in docs if score >= 0.20]
-        return result
-    return search
-
-def get_retriever_object_teamly():
-    MAX_RETRIEVALS = 3
-    global _teamly_retriever_instance#, _teamly_compression_retriever_instance
-    # Initialize Teamly retriever with refresh support
-    _teamly_retriever_instance = TeamlyRetriever("./auth.json", k=5)
-
-    bft_vs = load_vectorstore(config.ASSISTANT_INDEX_FOLDER, config.EMBEDDING_MODEL)
-    ensemble_retriever = EnsembleRetriever(
-        retrievers=[_teamly_retriever_instance, bft_vs.as_retriever(search_kwargs={"k": 5})],
-        weights=[0.6, 0.4]
-    )
-
-    #device = "cuda" if torch.cuda.is_available() else "cpu"
-    device = "cpu"
-    reranker_model = HuggingFaceCrossEncoder(
-        model_name=config.RERANKING_MODEL,
-        model_kwargs={'trust_remote_code': True, "device": device}
-    )
-    reranker = CrossEncoderRerankerWithScores(model=reranker_model, top_n=MAX_RETRIEVALS, min_ratio=float(config.MIN_RERANKER_RATIO))
-    return TeamlyContextualCompressionRetriever(
-        base_compressor=reranker, base_retriever=ensemble_retriever
-    )
-
-
-def get_retriever_teamly():
-    MAX_RETRIEVALS = 3
-    retriever = get_retriever_object_teamly()
-    def search(query: str) -> List[Document]:
-        result = retriever.invoke(query, search_kwargs={"k": MAX_RETRIEVALS})
-        # torch.cuda.empty_cache()
-        return result
-    return search
-
-def get_retriever_object_faiss():
-    MAX_RETRIEVALS = 3
-    vector_store_path = config.ASSISTANT_INDEX_FOLDER
-    vectorstore = load_vectorstore(vector_store_path, config.EMBEDDING_MODEL)
-    with open(f'{vector_store_path}/docstore.pkl', 'rb') as file:
-        documents = pickle.load(file)
-    doc_ids = [doc.metadata.get('problem_number', '') for doc in documents]
-    store = InMemoryByteStore()
-    id_key = "problem_number"
-    multi_retriever = MultiVectorRetriever(
-        vectorstore=vectorstore,
-        byte_store=store,
-        id_key=id_key,
-        search_kwargs={"k": MAX_RETRIEVALS},
-    )
-    multi_retriever.docstore.mset(list(zip(doc_ids, documents)))
-    #device = "cuda" if torch.cuda.is_available() else "cpu"
-    device = "cpu"
-    reranker_model = HuggingFaceCrossEncoder(
-        model_name=config.RERANKING_MODEL,
-        model_kwargs={'trust_remote_code': True, "device": device}
-    )
-    reranker = CrossEncoderRerankerWithScores(model=reranker_model, top_n=MAX_RETRIEVALS, min_ratio=float(config.MIN_RERANKER_RATIO))
-    return ContextualCompressionRetriever(
-        base_compressor=reranker, base_retriever=multi_retriever
-    )
-
-def get_retriever_faiss():
-    retriever = get_retriever_object_faiss()
-    MAX_RETRIEVALS = 3
-    def search(query: str) -> List[Document]:
-        result = retriever.invoke(query, search_kwargs={"k": MAX_RETRIEVALS})
-        return result
-    return search
 
 def get_retriever_object_faiss_chunked():
     MAX_RETRIEVALS = 3
@@ -226,17 +136,21 @@ def get_retriever_faiss_chunked():
         head_docs = [h for s in sources for h in head_store.get(s, [])]
         # 4) merge + dedupe
         return _dedupe_docs(retrieved + head_docs)
-    return search
+    def retrieve_requirements(bitrix_task_id: str) -> List[Document]:
+        return [
+            doc[0]
+            for doc in head_store.values()
+            if isinstance(getattr(doc[0], "metadata", None), dict)
+            and str(bitrix_task_id) in doc[0].metadata.get("task_no")
+        ]
+    return search, retrieve_requirements
 
 
 def get_retriever():
-    retriever_type = config.RETRIEVER_TYPE
-    if retriever_type == "teamly":
-        return get_retriever_teamly()
     return get_retriever_faiss_chunked()
 
 # Initialize the search function with the selected retrieverx
-search = get_retriever()
+search, retrieve_requirements = get_retriever()
 
 
 def refresh_indexes():
@@ -250,10 +164,11 @@ def refresh_indexes():
 
 def get_search_tool():
     @tool
-    def search_kb(query: str) -> str:
+    def search_kb(query: str) -> str: #, bitrix_task_id: Optional[str]) -> str:
         """Retrieves from knowledgebase context suitable for the query. Shall be always used when user asks question.
         Args:
-            query: a query to knowledgebase which helps answer user's question
+            query: a query to knowledgebase which helps answer user's question. 
+                Include into query task name, user's question, Number of the task in bitrix, request id and other available inormation
         Returns:
             Context from knowledgebase suitable for the query.
         """
@@ -265,27 +180,41 @@ def get_search_tool():
             return "No matching information found."
     return search_kb
 
-def get_tickets_search_tool():
-    MAX_RETRIEVALS = 3
-    global _teamly_retriever_tickets_instance
-
-    _teamly_retriever_tickets_instance = TeamlyRetriever_Tickets("./auth_tickets.json", k=MAX_RETRIEVALS)
-    
+def get_retrieve_requirements_tool():
     @tool
-    def search_tickets(query: str) -> str:
-        """Retrieves from tickets knowledgebase context suitable for the query. Shall be always used when user asks question.
+    def retrieve_task_requirements(bitrix_task_id: str) -> str:
+        """Retrieves functional requirements related to a specific bitrix task. Shall be always used when user asks question for a specific task.
         Args:
-            query: a query to knowledgebase which helps answer user's question
+            bitrix_task_id: Number of the task in Bitrix)
         Returns:
-            Context from knowledgebase suitable for the query.
+            Context from functional requirements storage related to a specific bitrix task.
         """
-        found_docs = _teamly_retriever_tickets_instance.invoke(query)
+        found_docs = retrieve_requirements(bitrix_task_id)
         if found_docs:
             result = "\n\n".join([doc.page_content for doc in found_docs[:30]])
             return result
         else:
             return "No matching information found."
-    return search_tickets
+    return retrieve_task_requirements
+
+def get_search_tool():
+    @tool
+    def search_kb(query: str) -> str: #, bitrix_task_id: Optional[str]) -> str:
+        """Retrieves from knowledgebase context suitable for the query. Shall be always used when user asks question.
+        Args:
+            query: a query to knowledgebase which helps answer user's question. 
+                Expand user's query with maximum of available information (task name, Number of the task in bitrix, request id and so on)
+        Returns:
+            Context from knowledgebase suitable for the query.
+        """
+        found_docs = search(query)
+        if found_docs:
+            result = "\n\n".join([doc.page_content for doc in found_docs[:30]])
+            return result
+        else:
+            return "No matching information found."
+    return search_kb
+
 
 def get_term_and_defition_tools():
     MAX_RETRIEVALS = 3

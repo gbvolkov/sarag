@@ -1,6 +1,12 @@
 from typing_extensions import TypedDict, Annotated, Dict, List
+from typing import Any, Optional, Sequence, Union
+#import json
+import ast
 
 import config
+
+from sqlalchemy.engine import Result
+
 
 from langchain_openai import ChatOpenAI
 from langchain.chat_models import init_chat_model
@@ -8,6 +14,11 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_community.tools.sql_database.tool import QuerySQLDatabaseTool
 from langchain_community.utilities import SQLDatabase
 from langchain_core.tools import tool
+
+from langchain_core.callbacks import (
+    CallbackManagerForToolRun,
+)
+
 
 llm_query_gen = ChatOpenAI(model="gpt-4.1", temperature=0)
 llm_answer_gen = ChatOpenAI(model="gpt-4.1-mini", temperature=0)
@@ -49,7 +60,7 @@ Given an input question, create a syntactically correct {dialect} query to
 run to help find the answer. You can order the results by a relevant column to
 return the most interesting examples in the database.
 
-Always include into response maimum columns relevant to the question givem. 
+Always include into response maximum columns relevant to the question givem. 
 
 Pay attention to use only the column names that you can see in the schema
 description. Be careful to not query for columns that do not exist. Also,
@@ -68,9 +79,19 @@ query_prompt_template = ChatPromptTemplate(
     [("system", system_message), ("user", user_prompt)]
 )
 
+class MyQuerySQLDatabaseTool(QuerySQLDatabaseTool):
+
+    def _run(
+        self,
+        query: str,
+        run_manager: Optional[CallbackManagerForToolRun] = None,
+    ) -> Union[str, Sequence[Dict[str, Any]], Result]:
+        """Execute the query, return the results or an error message."""
+        return self.db.run_no_throw(query, include_columns=True)
+
 class QueryOutput(TypedDict):
     """Generated SQL query."""
-
+    #columns_list: Annotated[list[str], ..., "List of DB columns at the query."]
     query: Annotated[str, ..., "Syntactically valid SQL query."]
 
 def write_query(question: str):
@@ -103,23 +124,28 @@ def fix_query(query: str, error: str):
 
     structured_llm = llm_query_gen.with_structured_output(QueryOutput)
     result = structured_llm.invoke(prompt)
-    return result["query"]
+    return result
 
 def execute_query(query: str):
     """Execute SQL query."""
-    execute_query_tool = QuerySQLDatabaseTool(db=db_tasks)
-
-    return execute_query_tool.invoke(query)
+    return db_tasks.run(query, include_columns=True)
+    #execute_query_tool = MyQuerySQLDatabaseTool(db=db_tasks)
+    #return execute_query_tool.invoke(query)
 
 def generate_answer(question: str, query: str, result: str):
     """Answer question using retrieved information as context."""
+    #result_list = ast.literal_eval(result)
+    #named_result = 
+    #for column in columns:
+
+
     prompt = (
         "Given the following user question, corresponding SQL query, "
         "and SQL result, provide relevant information from database.\n"
+        "Return data along with fields names in a json format: `'field_name': 'field_value'`.\n"
         "If result is empty inform user that there are no records meeting given criteria.\n"
-        "Respond with list of flats satisfying criteria\n"
+        "Respond with list of tasks satisfying criteria\n"
         "Include into response all fields, except technical\n"
-        "Include into response price_value, rooms, area_total, renovation and add other fields requested by user\n"
         "Do not include into response any technical fields (for example:ID).\n\n"
         f'Question: {question}\n'
         f'SQL Query: {query }\n'
@@ -132,11 +158,12 @@ MAX_ATTEMPTS = 3
 
 @tool
 def tasks_info(question: str) -> str:
-    """Rerurns information about tasks from tasks database. Shall be always used when user asks question about tasks duration, assignment, status and so on.
+    """Returns information about tasks from tasks database. Shall be always used when user asks question about tasks duration, assignment, status and so on.
     Args:
         question: a question user qhants to get answered
     Returns:
         Context from database answering user questions.
+        Return data along with fields names in a json format: `'field_name': 'field_value'`.
         Available fields are:
             "Номер задачи в Битрикс": "bitrix_task_id",
             "Номер ЗНИ": "request_id",
